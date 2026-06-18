@@ -1,0 +1,11 @@
+name: MaceLock
+version: 1.0.0
+main: com.yourserver.macelock.MaceLock
+api-version: '1.21'
+author: YourServer
+description: Blocks maces from being enchanted via anvil or enchanting table, except by staff.
+
+permissions:
+  kephale.mace.enchant:
+    description: Allows enchanting/anviling maces. OPs have this by default.
+    default: op
