@@ -7,5 +7,5 @@ description: Blocks maces from being enchanted via anvil or enchanting table, ex
 
 permissions:
   kephale.mace.enchant:
-    description: Allows enchanting/anviling maces (bypasses the lock). OPs have this by default.
+    description: Allows enchanting/anviling maces. OPs have this by default.
     default: op
