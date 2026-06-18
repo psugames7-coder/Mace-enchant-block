@@ -1,0 +1,137 @@
+package com.yourserver.macelock;
+
+import org.bukkit.Material;
+import org.bukkit.entity.HumanEntity;
+import org.bukkit.entity.Player;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
+import org.bukkit.event.Listener;
+import org.bukkit.event.enchantment.PrepareItemEnchantEvent;
+import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.event.inventory.InventoryType;
+import org.bukkit.event.inventory.PrepareAnvilEvent;
+import org.bukkit.inventory.AnvilInventory;
+import org.bukkit.inventory.EnchantingInventory;
+import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.plugin.java.JavaPlugin;
+
+/**
+ * MaceLock
+ *
+ * Prevents non-permitted players from enchanting or modifying MACES via the
+ * enchanting table or the anvil. This protects the "only 2 enchanted god maces
+ * exist" rule on Kephale SMP.
+ *
+ * Bypass: players with the permission "kephale.mace.enchant" (OPs have it by
+ * default) can still enchant/anvil maces — so staff can create the god maces.
+ *
+ * What it blocks for non-permitted players:
+ *   - Placing a mace into an enchanting table (the enchant slot is rejected)
+ *   - Enchanting table offers are cancelled for maces
+ *   - Anvil output is blocked when a mace is the input being modified
+ *   - Taking the result out of an anvil that involves a mace is prevented
+ */
+public class MaceLock extends JavaPlugin implements Listener {
+
+    private static final String BYPASS_PERMISSION = "kephale.mace.enchant";
+    private String blockMessage = "Maces cannot be enchanted on Kephale.";
+
+    @Override
+    public void onEnable() {
+        getServer().getPluginManager().registerEvents(this, this);
+        getLogger().info("MaceLock enabled. Maces are protected from enchant tables and anvils (bypass: " + BYPASS_PERMISSION + ").");
+    }
+
+    private boolean canBypass(HumanEntity who) {
+        // OPs have the permission by default (set in plugin.yml). Permission also
+        // grantable to non-ops via a permissions plugin like LuckPerms.
+        return who.hasPermission(BYPASS_PERMISSION);
+    }
+
+    private boolean isMace(ItemStack item) {
+        return item != null && item.getType() == Material.MACE;
+    }
+
+    private void warn(HumanEntity who) {
+        if (who instanceof Player player) {
+            player.sendMessage(blockMessage);
+        }
+    }
+
+    // ---------- ENCHANTING TABLE ----------
+
+    // Cancel the enchantment offers if a mace is in the table (non-permitted players).
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onPrepareEnchant(PrepareItemEnchantEvent event) {
+        if (canBypass(event.getEnchanter())) return;
+        if (isMace(event.getItem())) {
+            event.setCancelled(true);
+        }
+    }
+
+    // Prevent a non-permitted player from even placing a mace into the enchant table slot.
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onEnchantTableClick(InventoryClickEvent event) {
+        Inventory top = event.getView().getTopInventory();
+        if (!(top instanceof EnchantingInventory)) return;
+        if (canBypass(event.getWhoClicked())) return;
+
+        // Block placing a mace into the item slot of the enchant table.
+        // Catch both direct clicks into the table and shift-clicks from inventory.
+        ItemStack moving = null;
+
+        if (event.getRawSlot() == 0) {
+            // Clicking the enchant item slot directly - check what they're putting in.
+            moving = event.getCursor();
+            // Also handle hotbar-number swaps into the slot
+            if ((moving == null || moving.getType() == Material.AIR) && event.getHotbarButton() >= 0) {
+                moving = event.getWhoClicked().getInventory().getItem(event.getHotbarButton());
+            }
+        } else if (event.isShiftClick() && top.getType() == InventoryType.ENCHANTING) {
+            // Shift-clicking from the player's inventory pushes the item into the table.
+            moving = event.getCurrentItem();
+        }
+
+        if (isMace(moving)) {
+            event.setCancelled(true);
+            warn(event.getWhoClicked());
+        }
+    }
+
+    // ---------- ANVIL ----------
+
+    // Block the anvil result whenever a mace is one of the inputs (non-permitted players).
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onPrepareAnvil(PrepareAnvilEvent event) {
+        AnvilInventory inv = event.getInventory();
+        HumanEntity viewer = event.getView().getPlayer();
+        if (canBypass(viewer)) return;
+
+        ItemStack first = inv.getItem(0);
+        ItemStack second = inv.getItem(1);
+
+        if (isMace(first) || isMace(second)) {
+            // No valid result - blocks enchanting, combining, and renaming of maces.
+            event.setResult(null);
+        }
+    }
+
+    // Safety net: prevent grabbing a mace result out of the anvil output slot.
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onAnvilResultClick(InventoryClickEvent event) {
+        Inventory top = event.getView().getTopInventory();
+        if (!(top instanceof AnvilInventory inv)) return;
+        if (canBypass(event.getWhoClicked())) return;
+
+        // Output slot in an anvil is slot 2.
+        if (event.getRawSlot() != 2) return;
+
+        ItemStack first = inv.getItem(0);
+        ItemStack second = inv.getItem(1);
+        if (isMace(first) || isMace(second)) {
+            event.setCancelled(true);
+            warn(event.getWhoClicked());
+        }
+    }
+}
